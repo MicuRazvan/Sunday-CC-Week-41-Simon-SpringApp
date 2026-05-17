@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { display: flex; flex-direction: column; align-items: center; background: #222; color: white; font-family: sans-serif; }
+        #game-wrapper { display: flex; align-items: center; gap: 50px; margin-top: 50px; }
+        #board { width: 300px; height: 300px; position: relative; border-radius: 50%; border: 15px solid #000; background: #333; }
+        .quad { width: 150px; height: 150px; position: absolute; cursor: pointer; opacity: 0.4; transition: opacity 0.2s; }
+        .quad.active { opacity: 1 !important; box-shadow: 0 0 20px white; }
+
+        #center { position: absolute; top: 100px; left: 100px; width: 100px; height: 100px; background: #222; border-radius: 50%;
+                  display: flex; align-items: center; justify-content: center; z-index: 10; cursor: pointer; border: 4px solid #444; }
+
+        #level-counter { margin-top: 20px; font-size: 24px; }
+        #leaderboard { border: 1px solid #555; padding: 20px; border-radius: 10px; background: #333; }
+    </style>
+</head>
+<body>
+<div id="game-wrapper">
+    <div id="board">
+        <div id="0" class="quad" style="background:green; top:0; left:0; border-radius: 150px 0 0 0"></div>
+        <div id="1" class="quad" style="background:red; top:0; left:150px; border-radius: 0 150px 0 0"></div>
+        <div id="2" class="quad" style="background:yellow; top:150px; left:0; border-radius: 0 0 0 150px"></div>
+        <div id="3" class="quad" style="background:blue; top:150px; left:150px; border-radius: 0 0 150px 0"></div>
+        <div id="center" onclick="startGame()">START</div>
+    </div>
+
+    <div id="leaderboard">
+        <h3>Top 10 Scores</h3>
+        <table id="lbTable"></table>
+    </div>
+</div>
+<div id="level-counter">Level: 0</div>
+
+<script>
+    let canClick = false;
+
+    async function startGame() {
+        document.getElementById('center').style.display = 'none';
+        const res = await fetch('/api/start', {method: 'POST'});
+        const seq = await res.json();
+        playSeq(seq);
+    }
+
+    async function playSeq(seq) {
+        canClick = false;
+        document.getElementById('level-counter').innerText = "Level: " + seq.length;
+        for(let id of seq) {
+            let el = document.getElementById(id);
+            el.classList.add('active'); await new Promise(r => setTimeout(r, 600));
+            el.classList.remove('active'); await new Promise(r => setTimeout(r, 200));
+        }
+        canClick = true;
+    }
+
+    document.querySelectorAll('.quad').forEach(q => q.onclick = async (e) => {
+        if(!canClick) return;
+        let el = e.target;
+        el.classList.add('active');
+        setTimeout(() => el.classList.remove('active'), 200);
+
+        const res = await fetch('/api/click', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({color: parseInt(el.id)})
+        });
+        const data = await res.json();
+
+        if(data.gameOver) {
+            let name = prompt("Game Over! Score: " + data.score + ". Enter name:");
+            await fetch('/api/save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name || "Unknown", score: data.score})});
+            location.reload();
+        } else if(data.roundOver) {
+            // Wait 1 second before next round
+            await new Promise(r => setTimeout(r, 1000));
+            playSeq(data.nextSequence);
+        }
+    });
+
+    // Load leaderboard
+    fetch('/api/leaderboard').then(r=>r.json()).then(data => {
+        let table = document.getElementById('lbTable');
+        data.forEach(row => table.innerHTML += `<tr><td>${row.split(',')[0]}</td><td>${row.split(',')[1]}</td></tr>`);
+    });
+</script>
+</body>
+</html>
